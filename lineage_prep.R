@@ -165,3 +165,85 @@ find_start_node <- function(cds){
   start
 }
 
+isolate_lineage <- function(cds, lineage, sel_clusters = NULL, start_regions = NULL, starting_clusters = NULL,
+                            excluded_ages = NULL, excluded_ages_cluster = NULL,
+                            subset = FALSE, N = 5, cl = 1, r = 1) {
+  stopifnot(is.numeric(r), length(r) == 1, r > 0)
+  sel.cells <- isolate_lineage_sub(cds, lineage, sel_clusters = sel_clusters,
+                                   start_regions = start_regions, starting_clusters = starting_clusters,
+                                   excluded_ages = excluded_ages, excluded_ages_cluster = excluded_ages_cluster,
+                                   subset = subset, N = N, cl = cl, r = r)
+  cds@lineages[[lineage]] <- sel.cells
+  cds
+}
+
+isolate_lineage_sub <- function(cds, lineage, sel_clusters = NULL, start_regions = NULL, starting_clusters = NULL,
+                                excluded_ages = NULL, excluded_ages_cluster = NULL, subset = FALSE, N = 5, cl = 1, r){
+  sub.graph = cds@graphs[[lineage]]
+  nodes_UMAP = cds@principal_graph_aux[["UMAP"]]$dp_mst
+  if(subset == F){
+    nodes_UMAP.sub = as.data.frame(t(nodes_UMAP[,names(V(sub.graph))]))
+  }
+  else{
+    g = principal_graph(cds)[["UMAP"]]
+    dd = degree(g)
+    names1 = names(dd[dd > 2 | dd == 1])
+    names2 = names(dd[dd == 2])
+    names2 = sample(names2, length(names2)/subset, replace = F)
+    names = c(names1, names2)
+    names = intersect(names(V(sub.graph)), names)
+    nodes_UMAP.sub = as.data.frame(t(nodes_UMAP[,names]))
+  }
+  #select cells along the graph
+  #mean.dist = path.distance(nodes_UMAP.sub)
+  cells_UMAP = as.data.frame(reducedDims(cds)["UMAP"])
+  colnames(cells_UMAP) <- toupper(colnames(cells_UMAP))
+  cells_UMAP = cells_UMAP[,c("UMAP_1", "UMAP_2")]
+  sel.cells = cell.selector(nodes_UMAP.sub, cells_UMAP, r, cl = cl)
+  #only keep cells in the progenitor and lineage-specific clusters
+  sel.cells1 = c()
+  sel.cells2 = sel.cells
+  if(length(starting_clusters) > 0){
+    sel.cells1 = names(cds@"clusters"[["UMAP"]]$clusters[cds@"clusters"[["UMAP"]]$clusters %in% starting_clusters])
+  }
+  if(length(start_regions) > 0){
+    sel.cells1 = sel.cells1[sel.cells1 %in% rownames(cds@colData[cds@colData$region %in% start_regions,])]
+  }
+  if(length(sel_clusters) > 0){
+    sel.cells2 = names(cds@"clusters"[["UMAP"]]$clusters[cds@"clusters"[["UMAP"]]$clusters %in% sel_clusters])
+  }
+  
+  # Optional: exclude cells in all selected clusters with specific age labels, if no cluster specified, then exclude the cells
+  # in all clusters with the specific age labels
+  if (length(excluded_ages) > 0) {
+    cd <- colData(cds)
+    
+    # decide which age column the labels belong to (same check as before)
+    if (all(excluded_ages %in% cd$age_reorder)) {
+      age_col <- "age_reorder"
+    } else if (all(excluded_ages %in% cd$age_details)) {
+      age_col <- "age_details"
+    } else {
+      stop("excluded_ages not all found in a single column. Missing from age_reorder: ",
+           paste(setdiff(excluded_ages, cd$age_reorder), collapse = ", "),
+           " | missing from age_details: ",
+           paste(setdiff(excluded_ages, cd$age_details), collapse = ", "))
+    }
+    
+    cluster_labels <- cds@"clusters"[["UMAP"]]$clusters
+    
+    in_cluster <- if (length(excluded_ages_cluster) > 0) {
+      as.character(cluster_labels) %in% as.character(excluded_ages_cluster)
+    } else {
+      rep(TRUE, length(cluster_labels))     # no cluster given: apply to all cells
+    }
+    
+    cells_to_exclude <- names(cluster_labels)[
+      which(in_cluster & cd[names(cluster_labels), age_col] %in% excluded_ages)
+    ]
+    sel.cells2 <- sel.cells2[!(sel.cells2 %in% cells_to_exclude)]
+  }
+  cells = unique(c(sel.cells1, sel.cells2))
+  sel.cells = sel.cells[sel.cells %in% cells]
+  return(sel.cells)
+}
