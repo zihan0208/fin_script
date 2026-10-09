@@ -3,12 +3,14 @@ plot_combined_graph <- function(cds, reduction_method = "UMAP", color_cells_by =
                                 other_color = "grey85", show_others = TRUE,
                                 highlight_lineage = NULL, highlight_color = "orange",
                                 highlight_size = 0.3, highlight_alpha = 0.6,
-                                highlight_on_top = TRUE) {
-  library(igraph)
-  library(ggplot2)
-  library(dplyr)
+                                highlight_on_top = TRUE, graph_which = "subgraph") {
   
-  graph_list <- cds@graphs
+  # accept both forms: a plain igraph, or the converted list(subgraph, subgraph_reorder, dp_mst)
+  graph_list <- lapply(cds@graphs, function(g) {
+    if (inherits(g, "igraph")) g else g[[graph_which]]
+  })
+  stopifnot(all(vapply(graph_list, inherits, logical(1), what = "igraph")))
+  
   combined_graph <- Reduce(igraph::union, graph_list)
   graph_nodes <- V(combined_graph)$name
   
