@@ -1339,10 +1339,21 @@ run_pairwise_comparison <- function(list_A, list_B, interior_knots, n_knots) {
   ))
 }
 
-run_all_pairwise_bp <- function(cds, lineages, nknot = 8, n_knots = nknot-3) {
+run_all_pairwise_bp <- function(cds, lineages, nknot = 8, n_knots = NULL, knot_target_rank = 2) {
   
   pseudotime <- prepare_pt_flat(cds, lineages)
   interior_knots <- quantile(pseudotime, probs = seq(0, 1, length.out = nknot)[-c(1, nknot)])
+  
+  branch_points <- get_branch_points(cds@graphs, cds@principal_graph$UMAP)
+  results_list <- align_branch_points(cds, branch_points)
+  final_output  <- collect_by_branch_point(results_list, branch_points)
+  fixed_targets <- get_fixed_targets(cds, final_output)
+  
+  if (is.null(n_knots)) {
+    n_knots <- pick_knot(interior_knots, fixed_targets, which_target = knot_target_rank)
+  } else {
+    stopifnot(n_knots >= 1, n_knots <= length(interior_knots))
+  }
   
   lineage_names <- lineages
   if (length(lineage_names) < 2) {
@@ -1397,6 +1408,14 @@ run_all_pairwise_bp <- function(cds, lineages, nknot = 8, n_knots = nknot-3) {
   }
   
   return(list(patterns = final_pattern_list, diffend = final_diffend_list, diffend_part = final_diffend_part_list))
+}
+
+pick_knot <- function(interior_knots, fixed_targets, which_target = 2) {
+  stopifnot(which_target >= 1, which_target <= length(fixed_targets))
+  ref   <- sort(fixed_targets)[which_target]
+  below <- which(interior_knots < ref)
+  if (length(below) == 0) stop("no interior knot lies below the ", which_target, "-th target", call. = FALSE)
+  max(below)
 }
 
 reorder_metrics_grouped <- function(df, type) {
