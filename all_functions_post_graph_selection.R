@@ -2599,8 +2599,8 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
     d_final   <- process_lineage(d_pass, fc_matrix = mask_fc_by_ratio(d_pass), fc_cutoff = fc_p,
                                  fc_direction = "above", fc_mode = "all", fc_ignore_below = 0, fc_require_any = TRUE)
     rest      <- filter_df[setdiff(rownames(filter_df), rownames(d_pass)), , drop = FALSE]
-    #rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
-    lineage_genes_p <- lineage_genes_p[union(rownames(keep), union(rownames(d_final), rownames(rest))), , drop = FALSE]
+    rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
+    lineage_genes_p <- lineage_genes_p[union(rownames(keep), union(rownames(d_final), rownames(rest_kept))), , drop = FALSE]
     lineage_genes_p <- lineage_genes_p[complete.cases(lineage_genes_p), , drop = FALSE]
     
     # ---------------- selection: diffend_part ----------------
@@ -2614,8 +2614,8 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
                                  fc_direction = "above", fc_mode = "all", fc_ignore_below = 0, fc_require_any = TRUE)
     d_final_filter <- filter_predictA(d_final, min_all_mode = "any")
     rest      <- filter_df[setdiff(rownames(filter_df), rownames(d_pass)), , drop = FALSE]
-    #rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
-    lineage_genes_d_part_new <- lineage_genes_d_part[union(rownames(keep), union(rownames(d_final_filter), rownames(rest))), , drop = FALSE]
+    rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
+    lineage_genes_d_part_new <- lineage_genes_d_part[union(rownames(keep), union(rownames(d_final_filter), rownames(rest_kept))), , drop = FALSE]
     lineage_genes_d_part_new <- lineage_genes_d_part_new[complete.cases(lineage_genes_d_part_new), , drop = FALSE]
     
     # ---------------- store ----------------
