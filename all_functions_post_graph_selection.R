@@ -2528,19 +2528,23 @@ pick <- function(tab, genes, col) {
   setNames(v, genes)
 }
 
-format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1, bp_name, p_cutoff = 0.05, FC_pattern_cutoff = 0.2, fc_p = 0.4, fc_d = 0.2, peakend_cutoff = 1, FC_diffend_cutoff = 0.5, 
-                                            dynamic_I_cutoff = 0.1, dynamic_p_cutoff = 0.05, p_adjust = "BH", specificity = "high", dynamic_test = "Moran", type = "quasipoisson") {
+format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1, bp_name,
+                                            p_cutoff = 0.05, FC_pattern_cutoff = 0.2, fc_p = 0.4, fc_d = 0.2,
+                                            peakend_cutoff = 1, FC_diffend_cutoff = 0.5,
+                                            dynamic_I_cutoff = 0.1, dynamic_p_cutoff = 0.05, p_adjust = "BH",
+                                            specificity = "high", dynamic_test = "Moran", type = "quasipoisson") {
   lineages   <- names(cds@lineages)
   branches_1 <- branch_point[[branch_number]]
   branches_2 <- unlist(branch_point[-branch_number], use.names = FALSE)
   
-  branch_genes <- list(); branch_genes_double <- list()
+  branch_genes <- list(); branch_genes_double <- list(); branch_prefiltered <- list()
   branch_gene_names <- list(); branch_gene_names_double <- list()
   
   for (lineage in branches_1) {
-    lineage_pattern_genes      <- cds@lineage_genes[[lineage]][["filtered"]][["quasipoisson"]][["pattern_prefiltered"]]
-    lineage_diffend_genes      <- cds@lineage_genes[[lineage]][["filtered"]][["quasipoisson"]][["diffend_prefiltered"]]
-    lineage_diffend_part_genes <- cds@lineage_genes[[lineage]][["filtered"]][["quasipoisson"]][["diffend_part_prefiltered"]]
+    qp <- cds@lineage_genes[[lineage]][["filtered"]][["quasipoisson"]]
+    lineage_pattern_genes      <- qp[["pattern_prefiltered"]]
+    lineage_diffend_genes      <- qp[["diffend_prefiltered"]]
+    lineage_diffend_part_genes <- qp[["diffend_part_prefiltered"]]
     
     FC_names <- p_names <- predict_names <- endpeak_ratio <- peakmax <- c()
     for (lin in branches_2) {
@@ -2554,6 +2558,9 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
     lineage_pattern_genes      <- lineage_pattern_genes[,      grep(search_pattern, colnames(lineage_pattern_genes)),      drop = FALSE]
     lineage_diffend_genes      <- lineage_diffend_genes[,      grep(search_pattern, colnames(lineage_diffend_genes)),      drop = FALSE]
     lineage_diffend_part_genes <- lineage_diffend_part_genes[, grep(search_pattern, colnames(lineage_diffend_part_genes)), drop = FALSE]
+    
+    # untouched copies of every tested gene, for the fold changes of the combined output
+    branch_prefiltered[[lineage]] <- list(p = lineage_pattern_genes, d_part = lineage_diffend_part_genes)
     
     # ---------------- pattern test ----------------
     pairwise_columns_p <- grep("^pvalue_.*vs.*_pattern$", colnames(lineage_pattern_genes), value = TRUE)
@@ -2592,8 +2599,8 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
     d_final   <- process_lineage(d_pass, fc_matrix = mask_fc_by_ratio(d_pass), fc_cutoff = fc_p,
                                  fc_direction = "above", fc_mode = "all", fc_ignore_below = 0, fc_require_any = TRUE)
     rest      <- filter_df[setdiff(rownames(filter_df), rownames(d_pass)), , drop = FALSE]
-    rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
-    lineage_genes_p <- lineage_genes_p[union(rownames(keep), union(rownames(d_final), rownames(rest_kept))), , drop = FALSE]
+    #rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
+    lineage_genes_p <- lineage_genes_p[union(rownames(keep), union(rownames(d_final), rownames(rest))), , drop = FALSE]
     lineage_genes_p <- lineage_genes_p[complete.cases(lineage_genes_p), , drop = FALSE]
     
     # ---------------- selection: diffend_part ----------------
@@ -2607,16 +2614,16 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
                                  fc_direction = "above", fc_mode = "all", fc_ignore_below = 0, fc_require_any = TRUE)
     d_final_filter <- filter_predictA(d_final, min_all_mode = "any")
     rest      <- filter_df[setdiff(rownames(filter_df), rownames(d_pass)), , drop = FALSE]
-    rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
-    lineage_genes_d_part_new <- lineage_genes_d_part[union(rownames(keep), union(rownames(d_final_filter), rownames(rest_kept))), , drop = FALSE]
+    #rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
+    lineage_genes_d_part_new <- lineage_genes_d_part[union(rownames(keep), union(rownames(d_final_filter), rownames(rest))), , drop = FALSE]
     lineage_genes_d_part_new <- lineage_genes_d_part_new[complete.cases(lineage_genes_d_part_new), , drop = FALSE]
     
     # ---------------- store ----------------
-    branch_genes[[lineage]]              <- lineage_genes_p
-    branch_gene_names[[lineage]]         <- rownames(lineage_genes_p)
-    merged_df                            <- merge_exact(list(p = lineage_genes_p, d_part = lineage_genes_d_part_new))
-    branch_genes_double[[lineage]]       <- merged_df
-    branch_gene_names_double[[lineage]]  <- rownames(merged_df)
+    branch_genes[[lineage]]             <- lineage_genes_p
+    branch_gene_names[[lineage]]        <- rownames(lineage_genes_p)
+    merged_df                           <- merge_exact(list(p = lineage_genes_p, d_part = lineage_genes_d_part_new))
+    branch_genes_double[[lineage]]      <- merged_df
+    branch_gene_names_double[[lineage]] <- rownames(merged_df)
   }
   
   branch_gene_names        <- Reduce(intersect, branch_gene_names)
@@ -2631,11 +2638,19 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   for (lineage in branches_1) {
     lineage_genes        <- branch_genes[[lineage]]
     lineage_genes_double <- branch_genes_double[[lineage]]
+    pre <- branch_prefiltered[[lineage]]
     FC_names <- paste0("log2FC_", lineage, "vs", branches_2, "_")
     search_fc_pattern <- paste(FC_names, collapse = "|")
     
-    FCs        <- lineage_genes[branch_gene_names, grep(search_fc_pattern, colnames(lineage_genes)), drop = FALSE]
-    FCs_double <- lineage_genes_double[branch_gene_names_double, grep(search_fc_pattern, colnames(lineage_genes_double)), drop = FALSE]
+    FCs <- lineage_genes[branch_gene_names, grep(search_fc_pattern, colnames(lineage_genes)), drop = FALSE]
+    
+    # combined output: fold changes come from the prefiltered tables (every tested gene), by exact name
+    fc_p_cols  <- grep(search_fc_pattern, colnames(pre$p),      value = TRUE)
+    fc_dp_cols <- grep(search_fc_pattern, colnames(pre$d_part), value = TRUE)
+    FCs_double <- cbind(pre$p[match(branch_gene_names_double, rownames(pre$p)),           fc_p_cols,  drop = FALSE],
+                        pre$d_part[match(branch_gene_names_double, rownames(pre$d_part)), fc_dp_cols, drop = FALSE])
+    rownames(FCs_double) <- branch_gene_names_double
+    
     median_FC_matrix        <- cbind(median_FC_matrix, FCs)
     median_FC_matrix_double <- cbind(median_FC_matrix_double, FCs_double)
     
@@ -2659,8 +2674,8 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   meta_p_matrix <- meta_p_matrix[names(median_FC), , drop = FALSE]
   final_out <- as.data.frame(cbind(median_FC, meta_p_matrix))
   rownames(final_out) <- names(median_FC)
-  colnames(final_out) <- c("median_FC_pattern", colnames(meta_p_matrix))      # name what exists so far
-  final_out$moranI <- across_max(I_by_lineage, rownames(final_out))                # I, before specific_to_lineages
+  colnames(final_out) <- c("median_FC_pattern", colnames(meta_p_matrix))
+  final_out$moranI <- across_max(I_by_lineage, rownames(final_out))
   final_out$specific_to_lineages <- label
   final_out <- final_out[order(-abs(final_out$median_FC_pattern)), , drop = FALSE]
   
@@ -2680,7 +2695,7 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   final_out_double <- as.data.frame(cbind(median_FC_double, meta_p_matrix_double))
   rownames(final_out_double) <- rownames(median_FC_double)
   colnames(final_out_double) <- c(colnames(median_FC_double), colnames(meta_p_matrix_double))
-  final_out_double$moranI <- across_max(I_by_lineage_double, rownames(final_out_double))      
+  final_out_double$moranI <- across_max(I_by_lineage_double, rownames(final_out_double))
   final_out_double$transientScore <-
     rank(-final_out_double$median_FC_pattern, ties.method = "min")^2 +
     rank(-final_out_double$median_FC_diffend_part, ties.method = "min")^2
