@@ -2549,8 +2549,8 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   branches_1 <- branch_point[[branch_number]]
   branches_2 <- unlist(branch_point[-branch_number], use.names = FALSE)
   
-  branch_genes <- list(); branch_genes_double <- list(); branch_prefiltered <- list()
-  branch_gene_names <- list(); branch_gene_names_double <- list()
+  branch_genes <- list(); branch_genes_double <- list(); branch_genes_dpart <- list(); branch_prefiltered <- list()
+  branch_gene_names <- list(); branch_gene_names_double <- list(); branch_gene_names_dpart <- list()
   
   for (lineage in branches_1) {
     qp <- cds@lineage_genes[[lineage]][["filtered"]][["quasipoisson"]]
@@ -2571,7 +2571,6 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
     lineage_diffend_genes      <- lineage_diffend_genes[,      grep(search_pattern, colnames(lineage_diffend_genes)),      drop = FALSE]
     lineage_diffend_part_genes <- lineage_diffend_part_genes[, grep(search_pattern, colnames(lineage_diffend_part_genes)), drop = FALSE]
     
-    # untouched copies of every tested gene, for the fold changes of the combined output
     branch_prefiltered[[lineage]] <- list(p = lineage_pattern_genes, d_part = lineage_diffend_part_genes)
     
     # ---------------- pattern test ----------------
@@ -2612,7 +2611,7 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
                                  fc_direction = "above", fc_mode = "all", fc_ignore_below = 0, fc_require_any = TRUE)
     rest      <- filter_df[setdiff(rownames(filter_df), rownames(d_pass)), , drop = FALSE]
     rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
-    lineage_genes_p <- lineage_genes_p[union(rownames(keep), union(rownames(d_final), rownames(rest_kept))), , drop = FALSE]
+    lineage_genes_p <- rows_exact(lineage_genes_p, union(rownames(keep), union(rownames(d_final), rownames(rest_kept))))
     lineage_genes_p <- lineage_genes_p[complete.cases(lineage_genes_p), , drop = FALSE]
     
     # ---------------- selection: diffend_part ----------------
@@ -2627,12 +2626,14 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
     d_final_filter <- filter_predictA(d_final, min_all_mode = "any")
     rest      <- filter_df[setdiff(rownames(filter_df), rownames(d_pass)), , drop = FALSE]
     rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
-    lineage_genes_d_part_new <- lineage_genes_d_part[union(rownames(keep), union(rownames(d_final_filter), rownames(rest_kept))), , drop = FALSE]
+    lineage_genes_d_part_new <- rows_exact(lineage_genes_d_part, union(rownames(keep), union(rownames(d_final_filter), rownames(rest_kept))))
     lineage_genes_d_part_new <- lineage_genes_d_part_new[complete.cases(lineage_genes_d_part_new), , drop = FALSE]
     
     # ---------------- store ----------------
     branch_genes[[lineage]]             <- lineage_genes_p
     branch_gene_names[[lineage]]        <- rownames(lineage_genes_p)
+    branch_genes_dpart[[lineage]]       <- lineage_genes_d_part_new
+    branch_gene_names_dpart[[lineage]]  <- rownames(lineage_genes_d_part_new)
     merged_df                           <- merge_exact(list(p = lineage_genes_p, d_part = lineage_genes_d_part_new))
     branch_genes_double[[lineage]]      <- merged_df
     branch_gene_names_double[[lineage]] <- rownames(merged_df)
@@ -2640,46 +2641,61 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   
   branch_gene_names        <- Reduce(intersect, branch_gene_names)
   branch_gene_names_double <- Reduce(intersect, branch_gene_names_double)
+  branch_gene_names_dpart  <- Reduce(intersect, branch_gene_names_dpart)
   
   median_FC_matrix        <- matrix(0, nrow = length(branch_gene_names),        ncol = 0)
   median_FC_matrix_double <- matrix(0, nrow = length(branch_gene_names_double), ncol = 0)
+  median_FC_matrix_dpart  <- matrix(0, nrow = length(branch_gene_names_dpart),  ncol = 0)
   meta_p_matrix           <- matrix(0, nrow = length(branch_gene_names),        ncol = 0)
   meta_p_matrix_double    <- matrix(0, nrow = length(branch_gene_names_double), ncol = 0)
-  I_by_lineage <- list(); I_by_lineage_double <- list()
+  meta_p_matrix_dpart     <- matrix(0, nrow = length(branch_gene_names_dpart),  ncol = 0)
+  I_by_lineage <- list(); I_by_lineage_double <- list(); I_by_lineage_dpart <- list()
   
   for (lineage in branches_1) {
     lineage_genes        <- branch_genes[[lineage]]
     lineage_genes_double <- branch_genes_double[[lineage]]
+    lineage_genes_dpart  <- branch_genes_dpart[[lineage]]
     pre <- branch_prefiltered[[lineage]]
     FC_names <- paste0("log2FC_", lineage, "vs", branches_2, "_")
     search_fc_pattern <- paste(FC_names, collapse = "|")
+    branch2_names_str <- paste(branches_2, collapse = "&")
     
     FCs <- lineage_genes[branch_gene_names, grep(search_fc_pattern, colnames(lineage_genes)), drop = FALSE]
     
-    # combined output: fold changes come from the prefiltered tables (every tested gene), by exact name
     fc_p_cols  <- grep(search_fc_pattern, colnames(pre$p),      value = TRUE)
     fc_dp_cols <- grep(search_fc_pattern, colnames(pre$d_part), value = TRUE)
     FCs_double <- cbind(pre$p[match(branch_gene_names_double, rownames(pre$p)),           fc_p_cols,  drop = FALSE],
                         pre$d_part[match(branch_gene_names_double, rownames(pre$d_part)), fc_dp_cols, drop = FALSE])
     rownames(FCs_double) <- branch_gene_names_double
     
+    FCs_dpart <- lineage_genes_dpart[match(branch_gene_names_dpart, rownames(lineage_genes_dpart)),
+                                     grep(search_fc_pattern, colnames(lineage_genes_dpart), value = TRUE), drop = FALSE]
+    rownames(FCs_dpart) <- branch_gene_names_dpart
+    
     median_FC_matrix        <- cbind(median_FC_matrix, FCs)
     median_FC_matrix_double <- cbind(median_FC_matrix_double, FCs_double)
+    median_FC_matrix_dpart  <- cbind(median_FC_matrix_dpart, FCs_dpart)
     
     pvalue        <- lineage_genes[branch_gene_names, grep("pvalue_meta", colnames(lineage_genes), value = TRUE), drop = FALSE]
     pvalue_double <- lineage_genes_double[branch_gene_names_double, grep("pvalue_meta", colnames(lineage_genes_double), value = TRUE), drop = FALSE]
-    stopifnot(ncol(pvalue) == 1, ncol(pvalue_double) == 2)
-    branch2_names_str <- paste(branches_2, collapse = "&")
+    pvalue_dpart  <- lineage_genes_dpart[match(branch_gene_names_dpart, rownames(lineage_genes_dpart)),
+                                         grep("pvalue_meta", colnames(lineage_genes_dpart), value = TRUE), drop = FALSE]
+    rownames(pvalue_dpart) <- branch_gene_names_dpart
+    stopifnot(ncol(pvalue) == 1, ncol(pvalue_double) == 2, ncol(pvalue_dpart) == 1)
     colnames(pvalue)        <- paste0("pvalue_meta_", lineage, " vs ", branch2_names_str, "_pattern")
     colnames(pvalue_double) <- paste0("pvalue_meta_", lineage, " vs ", branch2_names_str, c("_pattern", "_diffend_part"))
+    colnames(pvalue_dpart)  <- paste0("pvalue_meta_", lineage, " vs ", branch2_names_str, "_diffend_part")
     meta_p_matrix        <- cbind(meta_p_matrix, pvalue)
     meta_p_matrix_double <- cbind(meta_p_matrix_double, pvalue_double)
+    meta_p_matrix_dpart  <- cbind(meta_p_matrix_dpart, pvalue_dpart)
     
     I_by_lineage[[lineage]]        <- get_I(lineage_genes)
     I_by_lineage_double[[lineage]] <- get_I(lineage_genes_double)
+    I_by_lineage_dpart[[lineage]]  <- get_I(lineage_genes_dpart)
   }
   
   label <- paste0(bp_name, "_", paste(branches_1, collapse = "_"))
+  single_score <- function(x) rank(-x, ties.method = "min")^2
   
   # ---------------- output 1: pattern test only ----------------
   median_FC <- row_median(median_FC_matrix)
@@ -2688,8 +2704,9 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   rownames(final_out) <- names(median_FC)
   colnames(final_out) <- c("median_FC_pattern", colnames(meta_p_matrix))
   final_out$moranI <- across_max(I_by_lineage, rownames(final_out))
+  final_out$transientScore <- single_score(final_out$median_FC_pattern)
   final_out$specific_to_lineages <- label
-  final_out <- final_out[order(-abs(final_out$median_FC_pattern)), , drop = FALSE]
+  final_out <- final_out[order(final_out$transientScore, rownames(final_out)), , drop = FALSE]
   
   # ---------------- output 2: pattern and diffend_part combined ----------------
   groups <- c(pattern = "_pattern$", diffend_part = "_diffend_part$")
@@ -2708,11 +2725,22 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   rownames(final_out_double) <- rownames(median_FC_double)
   colnames(final_out_double) <- c(colnames(median_FC_double), colnames(meta_p_matrix_double))
   final_out_double$moranI <- across_max(I_by_lineage_double, rownames(final_out_double))
-  final_out_double$transientScore <-
-    rank(-final_out_double$median_FC_pattern, ties.method = "min")^2 +
-    rank(-final_out_double$median_FC_diffend_part, ties.method = "min")^2
+  final_out_double$transientScore <- single_score(final_out_double$median_FC_pattern) + single_score(final_out_double$median_FC_diffend_part)
   final_out_double$specific_to_lineages <- label
-  final_out_double <- final_out_double[order(final_out_double$transientScore), , drop = FALSE]
+  final_out_double <- final_out_double[order(final_out_double$transientScore, rownames(final_out_double)), , drop = FALSE]
   
-  list("pattern_test_only" = final_out, "pattern_and_diffend_test_combined" = final_out_double)
+  # ---------------- output 3: diffend_part test only ----------------
+  median_FC_dp <- row_median(median_FC_matrix_dpart)
+  meta_p_matrix_dpart <- meta_p_matrix_dpart[names(median_FC_dp), , drop = FALSE]
+  final_out_dpart <- as.data.frame(cbind(median_FC_dp, meta_p_matrix_dpart))
+  rownames(final_out_dpart) <- names(median_FC_dp)
+  colnames(final_out_dpart) <- c("median_FC_diffend_part", colnames(meta_p_matrix_dpart))
+  final_out_dpart$moranI <- across_max(I_by_lineage_dpart, rownames(final_out_dpart))
+  final_out_dpart$transientScore <- single_score(final_out_dpart$median_FC_diffend_part)
+  final_out_dpart$specific_to_lineages <- label
+  final_out_dpart <- final_out_dpart[order(final_out_dpart$transientScore, rownames(final_out_dpart)), , drop = FALSE]
+  
+  list("pattern_test_only" = final_out,
+       "pattern_and_diffend_test_combined" = final_out_double,
+       "diffend_part_test_only" = final_out_dpart)
 }
