@@ -2571,7 +2571,8 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
     lineage_diffend_genes      <- lineage_diffend_genes[,      grep(search_pattern, colnames(lineage_diffend_genes)),      drop = FALSE]
     lineage_diffend_part_genes <- lineage_diffend_part_genes[, grep(search_pattern, colnames(lineage_diffend_part_genes)), drop = FALSE]
     
-    branch_prefiltered[[lineage]] <- list(p = lineage_pattern_genes, d_part = lineage_diffend_part_genes)
+    # untouched copies of every tested gene (all three tests), for the fold changes of the outputs
+    branch_prefiltered[[lineage]] <- list(p = lineage_pattern_genes, d = lineage_diffend_genes, d_part = lineage_diffend_part_genes)
     
     # ---------------- pattern test ----------------
     pairwise_columns_p <- grep("^pvalue_.*vs.*_pattern$", colnames(lineage_pattern_genes), value = TRUE)
@@ -2646,6 +2647,7 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   median_FC_matrix        <- matrix(0, nrow = length(branch_gene_names),        ncol = 0)
   median_FC_matrix_double <- matrix(0, nrow = length(branch_gene_names_double), ncol = 0)
   median_FC_matrix_dpart  <- matrix(0, nrow = length(branch_gene_names_dpart),  ncol = 0)
+  median_FC_matrix_ddiff  <- matrix(0, nrow = length(branch_gene_names_dpart),  ncol = 0)   # diffend fold changes of the diffend_part-only genes
   meta_p_matrix           <- matrix(0, nrow = length(branch_gene_names),        ncol = 0)
   meta_p_matrix_double    <- matrix(0, nrow = length(branch_gene_names_double), ncol = 0)
   meta_p_matrix_dpart     <- matrix(0, nrow = length(branch_gene_names_dpart),  ncol = 0)
@@ -2662,19 +2664,26 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
     
     FCs <- lineage_genes[branch_gene_names, grep(search_fc_pattern, colnames(lineage_genes)), drop = FALSE]
     
+    # combined output: pattern, diffend and diffend_part fold changes from the prefiltered tables, by exact name
     fc_p_cols  <- grep(search_fc_pattern, colnames(pre$p),      value = TRUE)
+    fc_d_cols  <- grep(search_fc_pattern, colnames(pre$d),      value = TRUE)
     fc_dp_cols <- grep(search_fc_pattern, colnames(pre$d_part), value = TRUE)
     FCs_double <- cbind(pre$p[match(branch_gene_names_double, rownames(pre$p)),           fc_p_cols,  drop = FALSE],
+                        pre$d[match(branch_gene_names_double, rownames(pre$d)),           fc_d_cols,  drop = FALSE],
                         pre$d_part[match(branch_gene_names_double, rownames(pre$d_part)), fc_dp_cols, drop = FALSE])
     rownames(FCs_double) <- branch_gene_names_double
     
+    # diffend_part-only output: its own fold changes, plus the diffend ones for the same genes
     FCs_dpart <- lineage_genes_dpart[match(branch_gene_names_dpart, rownames(lineage_genes_dpart)),
                                      grep(search_fc_pattern, colnames(lineage_genes_dpart), value = TRUE), drop = FALSE]
     rownames(FCs_dpart) <- branch_gene_names_dpart
+    FCs_ddiff <- pre$d[match(branch_gene_names_dpart, rownames(pre$d)), fc_d_cols, drop = FALSE]
+    rownames(FCs_ddiff) <- branch_gene_names_dpart
     
     median_FC_matrix        <- cbind(median_FC_matrix, FCs)
     median_FC_matrix_double <- cbind(median_FC_matrix_double, FCs_double)
     median_FC_matrix_dpart  <- cbind(median_FC_matrix_dpart, FCs_dpart)
+    median_FC_matrix_ddiff  <- cbind(median_FC_matrix_ddiff, FCs_ddiff)
     
     pvalue        <- lineage_genes[branch_gene_names, grep("pvalue_meta", colnames(lineage_genes), value = TRUE), drop = FALSE]
     pvalue_double <- lineage_genes_double[branch_gene_names_double, grep("pvalue_meta", colnames(lineage_genes_double), value = TRUE), drop = FALSE]
@@ -2708,8 +2717,8 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   final_out$specific_to_lineages <- label
   final_out <- final_out[order(final_out$transientScore, rownames(final_out)), , drop = FALSE]
   
-  # ---------------- output 2: pattern and diffend_part combined ----------------
-  groups <- c(pattern = "_pattern$", diffend_part = "_diffend_part$")
+  # ---------------- output 2: combined (pattern, diffend, diffend_part) ----------------
+  groups <- c(pattern = "_pattern$", diffend = "_diffend$", diffend_part = "_diffend_part$")
   cn <- colnames(median_FC_matrix_double)
   median_by_group <- lapply(groups, function(pat) {
     cols <- grep(pat, cn, value = TRUE)
@@ -2729,12 +2738,15 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   final_out_double$specific_to_lineages <- label
   final_out_double <- final_out_double[order(final_out_double$transientScore, rownames(final_out_double)), , drop = FALSE]
   
-  # ---------------- output 3: diffend_part test only ----------------
-  median_FC_dp <- row_median(median_FC_matrix_dpart)
+  # ---------------- output 3: diffend_part test only (with the diffend fold change) ----------------
+  median_FC_dp   <- row_median(median_FC_matrix_dpart)
+  median_FC_ddif <- row_median(median_FC_matrix_ddiff)
   meta_p_matrix_dpart <- meta_p_matrix_dpart[names(median_FC_dp), , drop = FALSE]
   final_out_dpart <- as.data.frame(cbind(median_FC_dp, meta_p_matrix_dpart))
   rownames(final_out_dpart) <- names(median_FC_dp)
   colnames(final_out_dpart) <- c("median_FC_diffend_part", colnames(meta_p_matrix_dpart))
+  final_out_dpart$median_FC_diffend <- unname(median_FC_ddif[match(rownames(final_out_dpart), names(median_FC_ddif))])
+  final_out_dpart <- final_out_dpart[, c("median_FC_diffend", setdiff(colnames(final_out_dpart), "median_FC_diffend")), drop = FALSE]
   final_out_dpart$moranI <- across_max(I_by_lineage_dpart, rownames(final_out_dpart))
   final_out_dpart$transientScore <- single_score(final_out_dpart$median_FC_diffend_part)
   final_out_dpart$specific_to_lineages <- label
@@ -2742,5 +2754,5 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   
   list("pattern_test_only" = final_out,
        "pattern_and_diffend_test_combined" = final_out_double,
-       "diffend_part_test_only" = final_out_dpart)
+       "diffend_test_only" = final_out_dpart)
 }
