@@ -2336,40 +2336,44 @@ format_lineage_specific_genes_bp <- function(lineage, cds, nknot = 8, p_cutoff =
   lineage_genes_p <- format_quasipoisson_cols(lineage_genes_p)
   lineage_genes_d_part <- format_quasipoisson_cols(lineage_genes_d_part_new)
   lineage_genes_d <- format_quasipoisson_cols(lineage_genes_d)
-  gene = union(rownames(lineage_genes_p), union(rownames(lineage_genes_d), rownames(lineage_genes_d_part)))
-  # 1. Merge the datasets
-  df_list <- list(
-    lineage_genes_p[, c("pvalue_meta", "I"), drop = FALSE], 
-    lineage_genes_d[, c("pvalue_meta", "I"), drop = FALSE], 
-    lineage_genes_d_part[, c("pvalue_meta", "I"), drop = FALSE]
-  )
+  # 1. Merge the three datasets
+  tabs <- list(p = lineage_genes_p, d = lineage_genes_d, d_part = lineage_genes_d_part)
+  gene <- Reduce(union, lapply(tabs, rownames))
+  pick <- function(tab, col) setNames(tab[[col]][match(gene, rownames(tab))], gene)      # exact lookup; NA where the gene is absent
   
-  merged_df <- Reduce(function(x, y) {
-    # If 'Row.names' already exists in x, merge by that column name. Otherwise use 0.
-    by_x <- if("Row.names" %in% colnames(x)) "Row.names" else 0
-    merge(x, y, by.x = by_x, by.y = 0, all = TRUE)
-  }, df_list)
+  # the object lineage_genes_d carries the diffend_part statistics, so its pvalue_meta is merged with the d_part one
+  pd_part <- pick(lineage_genes_d_part, "pvalue_meta")
+  pd      <- pick(lineage_genes_d,      "pvalue_meta")
+  both    <- !is.na(pd) & !is.na(pd_part)
+  if (any(abs(pd[both] - pd_part[both]) > 1e-12 * pmax(abs(pd[both]), abs(pd_part[both]), 1e-300)))
+    warning("pvalue_meta differs between lineage_genes_d and lineage_genes_d_part for some genes; the d_part value is used")
   
-  rownames(merged_df) <- merged_df$Row.names
-  colnames(merged_df) <- c("Row.names", "pvalue_p", "I_p", "pvalue_d", "I_d", "pvalue_d_part", "I_d_part")
-  merged_df$I <- pmax(merged_df$I_p, merged_df$I_d, merged_df$I_d_part, na.rm = TRUE)
-  merged_df$Row.names <- NULL
-  merged_df <- merged_df[, c("pvalue_p", "pvalue_d", "pvalue_d_part", "I")]
-  merged_df <- merged_df[gene, ]
+  merged_df <- data.frame(pvalue_p      = pick(lineage_genes_p, "pvalue_meta"),
+                          pvalue_d_part = ifelse(is.na(pd_part), pd, pd_part),
+                          I = pmax(pick(lineage_genes_p, "I"), pick(lineage_genes_d, "I"), pick(lineage_genes_d_part, "I"), na.rm = TRUE),
+                          row.names = gene)
   
-  p_df      <- data.frame(median_FC_pattern       = pick(pattern_genes_adjusted,       gene, "median_FC_pattern"),       row.names = gene)
-  d_df      <- data.frame(median_FC_diffend       = pick(diffend_genes_adjusted,       gene, "median_FC_diffend"),       row.names = gene)
-  d_part_df <- data.frame(median_FC_diffend_part  = pick(diffend_part_genes_adjusted,  gene, "median_FC_diffend_part"),  row.names = gene)
+  # 2. Median fold changes, from the prefiltered tables, by exact name
+  p_df      <- data.frame(median_FC_pattern      = pick(pattern_genes_adjusted,      "median_FC_pattern"),      row.names = gene)
+  d_df      <- data.frame(median_FC_diffend      = pick(diffend_genes_adjusted,      "median_FC_diffend"),      row.names = gene)
+  d_part_df <- data.frame(median_FC_diffend_part = pick(diffend_part_genes_adjusted, "median_FC_diffend_part"), row.names = gene)
   
-  p_df <- p_df[rownames(d_df), , drop = FALSE]
-  d_part_df <- d_part_df[rownames(d_df), , drop = FALSE]
   merged <- cbind(p_df, d_df, d_part_df, merged_df)
-  colnames(merged) <- c("median_FC_pattern", "median_FC_diffend", "median_FC_diffend_part", "pvalue_meta_patterntest", "pvalue_meta_diffendtest", "pvalue_meta_diffendparttest", "moranI")
-  merged$transientScore <- 
-    rank(-merged$median_FC_pattern, ties.method = "min")^2 + rank(-merged$median_FC_diffend, ties.method = "min")^2 + rank(-merged$median_FC_diffend_part, ties.method = "min")^2
-  lineage_spec_genes <- merged[order(merged$transientScore), ]
+  stopifnot(identical(rownames(merged), gene))
+  colnames(merged) <- c("median_FC_pattern", "median_FC_diffend", "median_FC_diffend_part",
+                        "pvalue_meta_patterntest", "pvalue_meta_diffendparttest", "moranI")
+  
+  merged$transientScore <-
+    rank(-merged$median_FC_pattern, ties.method = "min")^2 +
+    rank(-merged$median_FC_diffend, ties.method = "min")^2 +
+    rank(-merged$median_FC_diffend_part, ties.method = "min")^2
+  lineage_spec_genes <- merged[order(merged$transientScore), , drop = FALSE]
   lineage_spec_genes$lineage <- rep(lineage, nrow(lineage_spec_genes))
-  lineage_spec <- list("pattern_filtered" = lineage_genes_p, "pattern_prefiltered" = pattern_genes_adjusted, "diffend_filtered" = lineage_genes_d, "diffend_prefiltered" = diffend_genes_adjusted, "diffend_part_filtered" = lineage_genes_d_part, "diffend_part_prefiltered" = diffend_part_genes_adjusted, "combined" = lineage_spec_genes)
+  
+  lineage_spec <- list("pattern_filtered" = lineage_genes_p, "pattern_prefiltered" = pattern_genes_adjusted,
+                       "diffend_filtered" = lineage_genes_d, "diffend_prefiltered" = diffend_genes_adjusted,
+                       "diffend_part_filtered" = lineage_genes_d_part, "diffend_part_prefiltered" = diffend_part_genes_adjusted,
+                       "combined" = lineage_spec_genes)
   lineage_spec
 }
 
