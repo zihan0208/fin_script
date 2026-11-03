@@ -2131,10 +2131,15 @@ mask_fc_by_ratio <- function(df, min_ratio = 1, ratio_prefix = "endpeak_ratio_")
   fc
 }
 
+rows_exact <- function(tab, genes) {
+  idx <- match(genes, rownames(tab))
+  tab[idx[!is.na(idx)], , drop = FALSE]                          # only genes that really exist in tab, exact names
+}
+
 format_lineage_specific_genes_bp <- function(lineage, cds, nknot = 8, p_cutoff = 0.05, FC_pattern_cutoff = 0.2, fc_p = 0.4, fc_p_fold = 0.4, fc_d_fold = 0.4, fc_d = 0.2, peakend_cutoff = 1, 
                                              FC_diffend_cutoff = 0.5, fc_require_any_p = TRUE, fc_require_any_d = TRUE, rest_filter = FALSE, keep_genes = TRUE, rest_predictA = FALSE, 
                                              min_neg_1 = 0.1, min_neg_2 = NULL, min_all_p = 0.007, min_all_d =  0.03, min_neg_choice = TRUE, min_all_r = NULL, min_all_r_d = NULL,
-                                             dynamic_I_cutoff = 0.1, dynamic_p_cutoff = 0.05, p_adjust = "BH", specificity = "high", dynamic_test = "Moran", type = "quasipoisson"){
+                                             dynamic_I_cutoff = 0.1, dynamic_p_cutoff = 0.05, dynamic_test = "Moran", type = "quasipoisson"){
   lineages = names(cds@lineages)
   pseudotime <- prepare_pt_flat(cds, lineages)
   interior_knots <- quantile(pseudotime, probs = seq(0, 1, length.out = nknot)[-c(1, nknot)])
@@ -2156,7 +2161,7 @@ format_lineage_specific_genes_bp <- function(lineage, cds, nknot = 8, p_cutoff =
   common_genes <- intersect(expressed_genes, rownames(diffend_part_genes))
   diffend_part_genes <- diffend_part_genes[common_genes, , drop = FALSE]
   #Second filter out genes that has p value >= 0.05 and moran's I statistics above 0.1 from the dynamic test
-  if(dynamic_I_cutoff != F){
+  if(!isFALSE(dynamic_I_cutoff)){
     dynamic = cds@dynamic_genes[[lineage]]
     if(dynamic_test == "Moran"){
       dynamic_genes = rownames(dynamic[dynamic$I >= dynamic_I_cutoff & dynamic$padj <= dynamic_p_cutoff, ])
@@ -2185,34 +2190,30 @@ format_lineage_specific_genes_bp <- function(lineage, cds, nknot = 8, p_cutoff =
   diffend_part_genes_adjusted <- diffend_part_genes[!is.na(diffend_part_genes$average_FC_diffend_part),]
   
   #Get p value matrix and adjust the p values, also add endpeak values
-  if(p_adjust != FALSE){
-    pattern_genes_adjusted <- add_endpeak_ratio(pattern_genes_adjusted, cds, fixed_targets, suffix = "_pattern")
-    pairwise_columns_p <- grep("^pvalue_.*vs.*_pattern$", colnames(pattern_genes_adjusted), value = TRUE)
-    pattern_genes_adjusted$pvalue_meta  <- apply(pattern_genes_adjusted[, pairwise_columns_p, drop = FALSE], 1, get_meta_p)
-    lineage_genes_p <- pattern_genes_adjusted
-    #lineage_genes_p <- lineage_genes_p[complete.cases(lineage_genes_p), , drop = FALSE]
-    lineage_genes_p[, pairwise_columns_p] <- lapply(lineage_genes_p[, pairwise_columns_p, drop = FALSE], p.adjust, method = "BH")
-    lineage_genes_p$pvalue_meta <- p.adjust(lineage_genes_p$pvalue_meta, method = "BH")
-    p_matrix_complete_adj <- lineage_genes_p[, pairwise_columns_p, drop = FALSE]
-    
-    diffend_genes_adjusted <- add_endpeak_ratio(diffend_genes_adjusted, cds, fixed_targets, suffix = "_diffend")
-    pairwise_columns_d <- grep("^pvalue_.*vs.*_diffend$", colnames(diffend_genes_adjusted), value = TRUE)
-    diffend_genes_adjusted$pvalue_meta  <- apply(diffend_genes_adjusted[, pairwise_columns_d, drop = FALSE], 1, get_meta_p)
-    lineage_genes_d <- diffend_genes_adjusted
-    #lineage_genes_d <- lineage_genes_d[complete.cases(lineage_genes_d), , drop = FALSE]
-    lineage_genes_d[, pairwise_columns_d] <- lapply(lineage_genes_d[, pairwise_columns_d, drop = FALSE], p.adjust, method = "BH")
-    lineage_genes_d$pvalue_meta <- p.adjust(lineage_genes_d$pvalue_meta, method = "BH")
-    d_matrix_adj <- lineage_genes_d[, pairwise_columns_d, drop = FALSE]
-    
-    diffend_part_genes_adjusted <- add_endpeak_ratio(diffend_part_genes_adjusted, cds, fixed_targets, suffix = "_diffend_part")
-    pairwise_columns_d_part <- grep("^pvalue_.*vs.*_diffend_part$", colnames(diffend_part_genes_adjusted), value = TRUE)
-    diffend_part_genes_adjusted$pvalue_meta  <- apply(diffend_part_genes_adjusted[, pairwise_columns_d_part, drop = FALSE], 1, get_meta_p)
-    lineage_genes_d_part <- diffend_part_genes_adjusted
-    #lineage_genes_d_part <- lineage_genes_d_part[complete.cases(lineage_genes_d_part), , drop = FALSE]
-    lineage_genes_d_part[, pairwise_columns_d_part] <- lapply(lineage_genes_d_part[, pairwise_columns_d_part, drop = FALSE], p.adjust, method = "BH")
-    lineage_genes_d_part$pvalue_meta <- p.adjust(lineage_genes_d_part$pvalue_meta, method = "BH")
-    d_part_matrix_adj <- lineage_genes_d_part[, pairwise_columns_d_part, drop = FALSE]
-  }
+  pattern_genes_adjusted <- add_endpeak_ratio(pattern_genes_adjusted, cds, fixed_targets, suffix = "_pattern")
+  pairwise_columns_p <- grep("^pvalue_.*vs.*_pattern$", colnames(pattern_genes_adjusted), value = TRUE)
+  pattern_genes_adjusted$pvalue_meta  <- apply(pattern_genes_adjusted[, pairwise_columns_p, drop = FALSE], 1, get_meta_p)
+  lineage_genes_p <- pattern_genes_adjusted
+  lineage_genes_p[, pairwise_columns_p] <- lapply(lineage_genes_p[, pairwise_columns_p, drop = FALSE], p.adjust, method = "BH")
+  lineage_genes_p$pvalue_meta <- p.adjust(lineage_genes_p$pvalue_meta, method = "BH")
+  p_matrix_complete_adj <- lineage_genes_p[, pairwise_columns_p, drop = FALSE]
+  
+  diffend_genes_adjusted <- add_endpeak_ratio(diffend_genes_adjusted, cds, fixed_targets, suffix = "_diffend")
+  pairwise_columns_d <- grep("^pvalue_.*vs.*_diffend$", colnames(diffend_genes_adjusted), value = TRUE)
+  diffend_genes_adjusted$pvalue_meta  <- apply(diffend_genes_adjusted[, pairwise_columns_d, drop = FALSE], 1, get_meta_p)
+  lineage_genes_d <- diffend_genes_adjusted
+  lineage_genes_d[, pairwise_columns_d] <- lapply(lineage_genes_d[, pairwise_columns_d, drop = FALSE], p.adjust, method = "BH")
+  lineage_genes_d$pvalue_meta <- p.adjust(lineage_genes_d$pvalue_meta, method = "BH")
+  d_matrix_adj <- lineage_genes_d[, pairwise_columns_d, drop = FALSE]
+  
+  diffend_part_genes_adjusted <- add_endpeak_ratio(diffend_part_genes_adjusted, cds, fixed_targets, suffix = "_diffend_part")
+  pairwise_columns_d_part <- grep("^pvalue_.*vs.*_diffend_part$", colnames(diffend_part_genes_adjusted), value = TRUE)
+  diffend_part_genes_adjusted$pvalue_meta  <- apply(diffend_part_genes_adjusted[, pairwise_columns_d_part, drop = FALSE], 1, get_meta_p)
+  lineage_genes_d_part <- diffend_part_genes_adjusted
+  lineage_genes_d_part[, pairwise_columns_d_part] <- lapply(lineage_genes_d_part[, pairwise_columns_d_part, drop = FALSE], p.adjust, method = "BH")
+  lineage_genes_d_part$pvalue_meta <- p.adjust(lineage_genes_d_part$pvalue_meta, method = "BH")
+  d_part_matrix_adj <- lineage_genes_d_part[, pairwise_columns_d_part, drop = FALSE]
+  
   #Get FC matrix
   FCs_p = lineage_genes_p[, grepl("log2FC", colnames(lineage_genes_p)), drop = FALSE]
   median_FC_p <- apply(FCs_p, 1, median, na.rm = TRUE)
@@ -2235,128 +2236,136 @@ format_lineage_specific_genes_bp <- function(lineage, cds, nknot = 8, p_cutoff =
   median_FC_d_part = median_FC_d_part[rownames(diffend_part_genes_adjusted)]
   diffend_part_genes_adjusted$median_FC_diffend_part <- median_FC_d_part
   
-  if(specificity == "high"){
-    #pattern
-    keep  <- process_lineage(lineage_genes_p, p_matrix_complete_adj, p_cutoff = p_cutoff, fc_cutoff = fc_p)
-    loose     <- process_lineage(lineage_genes_p, p_matrix_complete_adj, p_cutoff = p_cutoff, fc_cutoff = FC_pattern_cutoff)
+  #filter
+  #pattern_test
+  keep  <- process_lineage(lineage_genes_p, p_matrix_complete_adj, p_cutoff = p_cutoff, fc_cutoff = fc_p)
+  loose     <- process_lineage(lineage_genes_p, p_matrix_complete_adj, p_cutoff = p_cutoff, fc_cutoff = FC_pattern_cutoff)
+  filter_df <- loose[!(rownames(loose) %in% rownames(keep)), , drop = FALSE]
+  d_tab   <- lineage_genes_d[intersect(rownames(filter_df), rownames(lineage_genes_d)), , drop = FALSE]
+  d_pass  <- process_lineage(d_tab, peakend_cutoff = peakend_cutoff,
+                             peakend_pattern = "^endpeak_ratio_",
+                             peakend_direction = "greater", peakend_mode = "any")
+  d_final <- process_lineage(d_pass, fc_matrix = mask_fc_by_ratio(d_pass), fc_cutoff = fc_p_fold,
+                             fc_direction = "above", fc_mode = "all",
+                             fc_ignore_below = 0, fc_require_any = fc_require_any_p)
+  rest      <- filter_df[setdiff(rownames(filter_df), rownames(d_pass)), , drop = FALSE]
+  if (isTRUE(rest_filter)){
+    rest_kept <- rest[!flat_low_genes(rest,
+                                      peak_range = list(c(-Inf, 0.05), c(-Inf, 0.01)),
+                                      ratio_max  = list(0.1, NULL)), , drop = FALSE]
+  }else{
+    rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
+  }
+  lineage_genes_p <- rows_exact(lineage_genes_p, union(rownames(keep), union(rownames(d_final), rownames(rest_kept))))
+  lineage_genes_p <- lineage_genes_p[complete.cases(lineage_genes_p), , drop = FALSE]
+  
+  #diffendpart_test
+  if (isTRUE(keep_genes)){
+    keep  <- process_lineage(lineage_genes_d_part, d_part_matrix_adj, p_cutoff = p_cutoff, fc_cutoff = FC_diffend_cutoff)
+    loose <- process_lineage(lineage_genes_d_part, d_part_matrix_adj, p_cutoff = p_cutoff, fc_cutoff = fc_d)
     filter_df <- loose[!(rownames(loose) %in% rownames(keep)), , drop = FALSE]
     d_tab   <- lineage_genes_d[intersect(rownames(filter_df), rownames(lineage_genes_d)), , drop = FALSE]
-    d_pass  <- process_lineage(d_tab, peakend_cutoff = peakend_cutoff,
-                               peakend_pattern = "^endpeak_ratio_",
-                               peakend_direction = "greater", peakend_mode = "any")
-    d_final <- process_lineage(d_pass, fc_matrix = mask_fc_by_ratio(d_pass), fc_cutoff = fc_p_fold,
-                               fc_direction = "above", fc_mode = "all",
-                               fc_ignore_below = 0, fc_require_any = fc_require_any_p)
-    rest      <- filter_df[setdiff(rownames(filter_df), rownames(d_pass)), , drop = FALSE]
-    if (rest_filter == T){
-      rest_kept <- rest[!flat_low_genes(rest,
-                                        peak_range = list(c(-Inf, 0.05), c(-Inf, 0.01)),
-                                        ratio_max  = list(0.1, NULL)), , drop = FALSE]
-    }else{
-      rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
-    }
-    lineage_genes_p <- lineage_genes_p[union(rownames(keep), union(rownames(d_final), rownames(rest_kept))),]
-    lineage_genes_p <- lineage_genes_p[complete.cases(lineage_genes_p), , drop = FALSE]
-    ###################################################################################################################################################################################
-    #diffendpart
-    if (keep_genes == TRUE){
-      keep  <- process_lineage(lineage_genes_d_part, d_part_matrix_adj, p_cutoff = p_cutoff, fc_cutoff = FC_diffend_cutoff)
-      loose <- process_lineage(lineage_genes_d_part, d_part_matrix_adj, p_cutoff = p_cutoff, fc_cutoff = fc_d)
-      filter_df <- loose[!(rownames(loose) %in% rownames(keep)), , drop = FALSE]
-      d_tab   <- lineage_genes_d[intersect(rownames(filter_df), rownames(lineage_genes_d)), , drop = FALSE]
-    }else{
-      keep  <- process_lineage(lineage_genes_d_part, d_part_matrix_adj, p_cutoff = p_cutoff, fc_cutoff = FC_diffend_cutoff)
-      d_tab   <- lineage_genes_d[intersect(rownames(keep), rownames(lineage_genes_d)), , drop = FALSE]
-    }
-    d_pass <- process_lineage(d_tab, peakend_cutoff = peakend_cutoff,
-                              peakend_pattern = "^endpeak_ratio_",
-                              peakend_direction = "greater", peakend_mode = "any")
-    d_final <- process_lineage(d_pass, fc_matrix = mask_fc_by_ratio(d_pass), fc_cutoff = fc_d,
-                               fc_direction = "above", fc_mode = "all",
-                               fc_ignore_below = 0, fc_require_any = fc_require_any_d)
-    if (min_neg_choice == TRUE){
-      d_final_filter <- filter_predictA(d_final, min_all = min_all_p, min_all_mode = "any", min_neg = min_neg_1)
-    }else{
-      d_final_filter <- filter_predictA(d_final, min_all = min_all_p, min_all_mode = "any", min_neg = min_neg_2)
-    }
-    rest      <- filter_df[setdiff(rownames(filter_df), rownames(d_pass)), , drop = FALSE]
-    if (rest_filter == T){
-      rest_kept <- rest[!flat_low_genes(rest,
-                                        peak_range = list(c(-Inf, 0.2), c(-Inf, 0.01)),
-                                        ratio_max  = list(0.1, NULL)), , drop = FALSE]
-    }else{
-      rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
-    }
-    if (rest_predictA == T){
-      rest_kept <- filter_predictA(rest_kept, min_all = min_all_r, min_all_mode = "any", min_neg = min_neg_2)
-    }
-    lineage_genes_d_part_new <- lineage_genes_d_part[union(rownames(keep), union(rownames(d_final_filter), rownames(rest_kept))),]
-    lineage_genes_d_part_new <- lineage_genes_d_part_new[complete.cases(lineage_genes_d_part_new), , drop = FALSE]
-    ####################################################################################################################################################################################
-    #diffend_above
-    keep <- process_lineage(lineage_genes_d_part, d_part_matrix_adj,
-                            p_cutoff = p_cutoff, fc_cutoff = FC_diffend_cutoff,
-                            fc_direction = "below", fc_mode = "any")
-    d_tab <- lineage_genes_d[intersect(rownames(keep), rownames(lineage_genes_d)), , drop = FALSE]
-    d_pass <- process_lineage(d_tab, peakend_cutoff = peakend_cutoff,
-                              peakend_pattern = "^endpeak_ratio_",
-                              peakend_direction = "greater", peakend_mode = "all")
-    d_final <- process_lineage(d_pass, fc_cutoff = fc_d_fold,
-                               fc_direction = "above", fc_mode = "all")
-    d_final_filter <- filter_predictA(d_final, min_all = min_all_d, min_all_mode = "any", min_neg = min_neg_2)
-    lineage_genes_d_above <- lineage_genes_d_part[rownames(d_final_filter), , drop = FALSE]
-    lineage_genes_d_above <- lineage_genes_d_above[complete.cases(lineage_genes_d_above), , drop = FALSE]
-    #diffend_below
-    d_tab_below <- keep[setdiff(rownames(d_tab), rownames(d_pass)),]
-    d_tab_below_pass <- process_lineage(d_tab_below, fc_cutoff = 0,
-                                        fc_direction = "below", fc_mode = "any")
-    d_tab_below_pass <- lineage_genes_d[intersect(rownames(d_tab_below_pass), rownames(lineage_genes_d)), , drop = FALSE]
-    d_tab_below_filter <- process_lineage(d_tab_below_pass, fc_cutoff = fc_d_fold,
-                                          fc_direction = "above", fc_mode = "all")
-    
-    if (rest_filter == T){
-      d_tab_below_filter_kept <- d_tab_below_filter[!flat_low_genes(d_tab_below_filter,
-                                                                    peak_range = list(c(-Inf, 0.2), c(-Inf, 0.01)),
-                                                                    ratio_max  = list(0.1, NULL)), , drop = FALSE]
-    }else{
-      d_tab_below_filter_kept <- d_tab_below_filter[!flat_low_genes(d_tab_below_filter, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
-    }
-    d_tab_below_filter_kept <- filter_peak_ratio(d_tab_below_filter_kept, min_peak = 0.05, min_ratio = 0.9, paired = TRUE)
-    
-    if (rest_predictA == T){
-      d_tab_below_filter_kept <- filter_predictA(d_tab_below_filter_kept, min_all = min_all_r_d,  min_all_mode = "any", min_neg = min_neg_2)
-    }
-    lineage_genes_d_below <- lineage_genes_d_part[rownames(d_tab_below_filter_kept), , drop = FALSE]
-    lineage_genes_d_below <- lineage_genes_d_below[complete.cases(lineage_genes_d_below), , drop = FALSE]
-    lineage_genes_d_both <- rbind(lineage_genes_d_above, lineage_genes_d_below)
-    g_both <- rownames(lineage_genes_d_both)
-    lineage_genes_d_both$median_FC_diffend <- pick(lineage_genes_d, g_both, "median_FC_diffend")
-    lineage_genes_d <- lineage_genes_d_both
+  }else{
+    keep  <- process_lineage(lineage_genes_d_part, d_part_matrix_adj, p_cutoff = p_cutoff, fc_cutoff = FC_diffend_cutoff)
+    filter_df <- keep
+    d_tab   <- lineage_genes_d[intersect(rownames(keep), rownames(lineage_genes_d)), , drop = FALSE]
   }
+  d_pass <- process_lineage(d_tab, peakend_cutoff = peakend_cutoff,
+                            peakend_pattern = "^endpeak_ratio_",
+                            peakend_direction = "greater", peakend_mode = "any")
+  d_final <- process_lineage(d_pass, fc_matrix = mask_fc_by_ratio(d_pass), fc_cutoff = fc_d,
+                             fc_direction = "above", fc_mode = "all",
+                             fc_ignore_below = 0, fc_require_any = fc_require_any_d)
+  if (isTRUE(min_neg_choice)){
+    d_final_filter <- filter_predictA(d_final, min_all = min_all_p, min_all_mode = "any", min_neg = min_neg_1)
+  }else{
+    d_final_filter <- filter_predictA(d_final, min_all = min_all_p, min_all_mode = "any", min_neg = min_neg_2)
+  }
+  rest  <- filter_df[setdiff(rownames(filter_df), rownames(d_pass)), , drop = FALSE]
+  if (isTRUE(rest_filter)){
+    rest_kept <- rest[!flat_low_genes(rest,
+                                      peak_range = list(c(-Inf, 0.2), c(-Inf, 0.01)),
+                                      ratio_max  = list(0.1, NULL)), , drop = FALSE]
+  }else{
+    rest_kept <- rest[!flat_low_genes(rest, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
+  }
+  if (isTRUE(rest_predictA)){
+    rest_kept <- filter_predictA(rest_kept, min_all = min_all_r, min_all_mode = "any", min_neg = min_neg_2)
+  }
+  if (isTRUE(keep_genes)){
+    final_genes <- union(rownames(keep), union(rownames(d_final_filter), rownames(rest_kept)))
+  }else{
+    final_genes <- union(rownames(d_final_filter), rownames(rest_kept))
+  }
+  lineage_genes_d_part_new <- rows_exact(lineage_genes_d_part, final_genes)
+  lineage_genes_d_part_new <- lineage_genes_d_part_new[complete.cases(lineage_genes_d_part_new), , drop = FALSE]
+  
+  #diffend_test_above
+  keep <- process_lineage(lineage_genes_d_part, d_part_matrix_adj,
+                          p_cutoff = p_cutoff, fc_cutoff = FC_diffend_cutoff,
+                          fc_direction = "below", fc_mode = "any")
+  d_tab <- lineage_genes_d[intersect(rownames(keep), rownames(lineage_genes_d)), , drop = FALSE]
+  d_pass <- process_lineage(d_tab, peakend_cutoff = peakend_cutoff,
+                            peakend_pattern = "^endpeak_ratio_",
+                            peakend_direction = "greater", peakend_mode = "all")
+  d_final <- process_lineage(d_pass, fc_cutoff = fc_d_fold,
+                             fc_direction = "above", fc_mode = "all")
+  d_final_filter <- filter_predictA(d_final, min_all = min_all_d, min_all_mode = "any", min_neg = min_neg_2)
+  lineage_genes_d_above <- rows_exact(lineage_genes_d_part, rownames(d_final_filter))
+  lineage_genes_d_above <- lineage_genes_d_above[complete.cases(lineage_genes_d_above), , drop = FALSE]
+  
+  #diffend_test_below
+  d_tab_below <- rows_exact(keep, setdiff(rownames(d_tab), rownames(d_pass)))
+  d_tab_below_pass <- process_lineage(d_tab_below, fc_cutoff = 0,
+                                      fc_direction = "below", fc_mode = "any")
+  d_tab_below_pass <- lineage_genes_d[intersect(rownames(d_tab_below_pass), rownames(lineage_genes_d)), , drop = FALSE]
+  d_tab_below_filter <- process_lineage(d_tab_below_pass, fc_cutoff = fc_d_fold,
+                                        fc_direction = "above", fc_mode = "all")
+  
+  if (isTRUE(rest_filter)){
+    d_tab_below_filter_kept <- d_tab_below_filter[!flat_low_genes(d_tab_below_filter,
+                                                                  peak_range = list(c(-Inf, 0.2), c(-Inf, 0.01)),
+                                                                  ratio_max  = list(0.1, NULL)), , drop = FALSE]
+  }else{
+    d_tab_below_filter_kept <- d_tab_below_filter[!flat_low_genes(d_tab_below_filter, peak_range = c(-Inf, 0.2), ratio_max = 0.1), , drop = FALSE]
+  }
+  d_tab_below_filter_kept <- filter_peak_ratio(d_tab_below_filter_kept, min_peak = 0.05, min_ratio = 0.9, paired = TRUE)
+  
+  if (isTRUE(rest_predictA)){
+    d_tab_below_filter_kept <- filter_predictA(d_tab_below_filter_kept, min_all = min_all_r_d,  min_all_mode = "any", min_neg = min_neg_2)
+  }
+  lineage_genes_d_below    <- rows_exact(lineage_genes_d_part, rownames(d_tab_below_filter_kept))
+  lineage_genes_d_below <- lineage_genes_d_below[complete.cases(lineage_genes_d_below), , drop = FALSE]
+  lineage_genes_d_both <- rbind(lineage_genes_d_above, lineage_genes_d_below)
+  g_both <- rownames(lineage_genes_d_both)
+  lineage_genes_d_both$median_FC_diffend <- pick(lineage_genes_d, g_both, "median_FC_diffend")
+  lineage_genes_d <- lineage_genes_d_both
+  
+  #output and formatting
   lineage_genes_p <- format_quasipoisson_cols(lineage_genes_p)
   lineage_genes_d_part <- format_quasipoisson_cols(lineage_genes_d_part_new)
   lineage_genes_d <- format_quasipoisson_cols(lineage_genes_d)
   # 1. Merge the three datasets
   tabs <- list(p = lineage_genes_p, d = lineage_genes_d, d_part = lineage_genes_d_part)
   gene <- Reduce(union, lapply(tabs, rownames))
-  pick <- function(tab, col) setNames(tab[[col]][match(gene, rownames(tab))], gene)      # exact lookup; NA where the gene is absent
+  pick2 <- function(tab, col) setNames(tab[[col]][match(gene, rownames(tab))], gene)      # exact lookup; NA where the gene is absent
   
   # the object lineage_genes_d carries the diffend_part statistics, so its pvalue_meta is merged with the d_part one
-  pd_part <- pick(lineage_genes_d_part, "pvalue_meta")
-  pd      <- pick(lineage_genes_d,      "pvalue_meta")
+  pd_part <- pick2(lineage_genes_d_part, "pvalue_meta")
+  pd      <- pick2(lineage_genes_d,      "pvalue_meta")
   both    <- !is.na(pd) & !is.na(pd_part)
   if (any(abs(pd[both] - pd_part[both]) > 1e-12 * pmax(abs(pd[both]), abs(pd_part[both]), 1e-300)))
     warning("pvalue_meta differs between lineage_genes_d and lineage_genes_d_part for some genes; the d_part value is used")
   
-  merged_df <- data.frame(pvalue_p      = pick(lineage_genes_p, "pvalue_meta"),
+  merged_df <- data.frame(pvalue_p      = pick2(lineage_genes_p, "pvalue_meta"),
                           pvalue_d_part = ifelse(is.na(pd_part), pd, pd_part),
-                          I = pmax(pick(lineage_genes_p, "I"), pick(lineage_genes_d, "I"), pick(lineage_genes_d_part, "I"), na.rm = TRUE),
+                          I = pmax(pick2(lineage_genes_p, "I"), pick2(lineage_genes_d, "I"), pick2(lineage_genes_d_part, "I"), na.rm = TRUE),
                           row.names = gene)
   
   # 2. Median fold changes, from the prefiltered tables, by exact name
-  p_df      <- data.frame(median_FC_pattern      = pick(pattern_genes_adjusted,      "median_FC_pattern"),      row.names = gene)
-  d_df      <- data.frame(median_FC_diffend      = pick(diffend_genes_adjusted,      "median_FC_diffend"),      row.names = gene)
-  d_part_df <- data.frame(median_FC_diffend_part = pick(diffend_part_genes_adjusted, "median_FC_diffend_part"), row.names = gene)
+  p_df      <- data.frame(median_FC_pattern      = pick2(pattern_genes_adjusted,      "median_FC_pattern"),      row.names = gene)
+  d_df      <- data.frame(median_FC_diffend      = pick2(diffend_genes_adjusted,      "median_FC_diffend"),      row.names = gene)
+  d_part_df <- data.frame(median_FC_diffend_part = pick2(diffend_part_genes_adjusted, "median_FC_diffend_part"), row.names = gene)
   
   merged <- cbind(p_df, d_df, d_part_df, merged_df)
   stopifnot(identical(rownames(merged), gene))
@@ -2376,7 +2385,6 @@ format_lineage_specific_genes_bp <- function(lineage, cds, nknot = 8, p_cutoff =
                        "combined" = lineage_spec_genes)
   lineage_spec
 }
-
 
 find_branches_bp <- function(cds){
   start = find_start_node(cds)
