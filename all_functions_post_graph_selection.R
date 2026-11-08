@@ -2404,6 +2404,105 @@ format_lineage_specific_genes_bp <- function(lineage, cds, nknot = 8, p_cutoff =
   lineage_spec
 }
 
+add_window_decline <- function(df, cds, fixed_targets, suffix = "_pattern",
+                               edge_n = 5, eps = 1e-8, flat_tol = 0.01,
+                               drop_prefix = "netdrop_", mono_prefix = "monotonic_") {
+  genes <- rownames(df)
+  pcols <- setdiff(grep(paste0("^pvalue_.*", suffix, "$"), colnames(df), value = TRUE), "pvalue_meta")
+  studies <- sub(paste0(suffix, "$"), "", sub("^pvalue_", "", pcols))
+  
+  cache <- new.env()
+  stats_for <- function(lin, slot, lo) {
+    key <- paste(lin, slot, sep = "|")
+    if (!is.null(cache[[key]])) return(cache[[key]])
+    out <- t(vapply(genes, function(g) {
+      na <- c(drop = NA_real_, mono = NA_real_)
+      pr <- cds@expectation[[lin]][[slot]][[g]]$prediction
+      if (is.null(pr)) return(na)
+      pr   <- as.numeric(pr)
+      grid <- seq(0, 1, length.out = length(pr))
+      v    <- pr[grid >= lo & !is.na(pr)]
+      if (length(v) < 3) return(na)
+      pk <- max(v)
+      if (pk <= eps) return(na)
+      d <- diff(v)
+      d[abs(d) < flat_tol * pk / length(d)] <- 0            # ignore tiny numerical wiggles
+      tot <- sum(abs(d))
+      c(drop = (mean(head(v, edge_n)) - mean(tail(v, edge_n))) / pk,
+        mono = if (tot > 0) sum(abs(d[d < 0])) / tot else NA_real_)
+    }, c(drop = 0, mono = 0)))
+    assign(key, out, envir = cache); out
+  }
+  
+  for (k in studies) {
+    p  <- parse_study(k)
+    lo <- fixed_targets[[sub("^aligned_", "", p$slot)]]
+    s  <- stats_for(p$l1, p$slot, lo)
+    df[[paste0(drop_prefix, k, suffix)]] <- as.numeric(s[, "drop"])
+    df[[paste0(mono_prefix, k, suffix)]] <- as.numeric(s[, "mono"])
+  }
+  df
+}
+
+drop_flat_monotonic <- function(df, mono_value = 1, peak_max = 0.1, tol = 1e-8,
+                                paired = TRUE, mode = c("any", "all"),
+                                mono_prefix = "monotonic_", peak_prefix = "peakmax_") {
+  mode <- match.arg(mode)
+  mo_cols <- grep(paste0("^", mono_prefix), colnames(df), value = TRUE)
+  pk_cols <- grep(paste0("^", peak_prefix), colnames(df), value = TRUE)
+  stopifnot(length(mo_cols) > 0, length(pk_cols) > 0)
+  
+  if (paired) {                                   # match each monotonic column to the peakmax column of the same comparison
+    key  <- sub(paste0("^", mono_prefix), "", mo_cols)
+    pk_c <- paste0(peak_prefix, key)
+    stopifnot(all(pk_c %in% colnames(df)))
+    mo <- as.matrix(df[, mo_cols, drop = FALSE])
+    pk <- as.matrix(df[, pk_c,   drop = FALSE])
+    hit <- (mo >= mono_value - tol) & (pk < peak_max)          # TRUE where a comparison is fully monotonic and low
+  } else {
+    mo <- as.matrix(df[, mo_cols, drop = FALSE])
+    pk <- as.matrix(df[, pk_cols, drop = FALSE])
+    hit <- matrix(rowSums(mo >= mono_value - tol, na.rm = TRUE) > 0 &
+                    rowSums(pk < peak_max,          na.rm = TRUE) > 0,
+                  ncol = 1)
+  }
+  hit[is.na(hit)] <- FALSE
+  remove <- if (mode == "any") rowSums(hit) >= 1 else rowSums(hit) == ncol(hit)
+  message("removes ", sum(remove), " of ", nrow(df), " genes")
+  df[!remove, , drop = FALSE]
+}
+
+complete_rows <- function(x, ignore = "^(netdrop|monotonic|peakmax|endpeak_ratio)_") {
+  cc_cols <- setdiff(colnames(x), grep(ignore, colnames(x), value = TRUE))
+  x[complete.cases(x[, cc_cols, drop = FALSE]), , drop = FALSE]
+}
+
+format_quasipoisson_cols <- function(df) {
+  # We use any_of() and matches() to ensure the function is robust 
+  # even if some columns aren't present in every dataset.
+  df_formatted <- df %>%
+    select(
+      matches("^waldStat|^log2FC"),
+      starts_with("predictA"),
+      starts_with("predictB"),
+      starts_with("pvalue"),
+      starts_with("endpeak_ratio"),
+      starts_with("peakmax"),
+      starts_with("monotonic"),
+      -any_of("pvalue_meta"),           # Temporarily remove to re-position at the end
+      matches("^average_FC|^median_FC"),
+      any_of("I"),
+      any_of("pvalue_meta")             # Add it back at the very end
+    )
+  
+  return(df_formatted)
+}
+
+rows_exact <- function(tab, genes) {
+  idx <- match(genes, rownames(tab))
+  tab[idx[!is.na(idx)], , drop = FALSE]                          # only genes that really exist in tab, exact names
+}
+
 find_branches_bp <- function(cds){
   start = find_start_node(cds)
   branch_points = get_branch_points(cds@graphs, cds@principal_graph$UMAP)
