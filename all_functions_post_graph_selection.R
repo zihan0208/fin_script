@@ -2859,3 +2859,29 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
        "pattern_and_diffend_test_combined" = final_out_double,
        "diffend_test_only" = final_out_dpart)
 }
+
+write_lineage_tests <- function(cds, lineages, tests, dirs) {
+  for (tname in names(tests)) {
+    t <- tests[[tname]]
+    for (lin in lineages) {
+      tab <- cds@lineage_genes[[lin]]$filtered$quasipoisson[[t$slot]]
+      if (is.null(tab)) { warning("no '", t$slot, "' table for ", lin); next }
+      miss <- setdiff(c(t$fc, "pvalue_meta", "I"), colnames(tab))
+      if (length(miss)) { warning(tname, " / ", lin, ": missing ", paste(miss, collapse = ", ")); next }
+      
+      tab <- tab[, c(t$fc, "pvalue_meta", "I"), drop = FALSE]
+      colnames(tab) <- c(t$fc, t$p_new, "moranI")
+      
+      # transient score for every test: sum of squared ranks over its fold-change column(s)
+      tab$transientScore <- Reduce(`+`, lapply(t$fc, function(col) single_score(tab[[col]])))
+      tab <- tab[order(tab$transientScore, rownames(tab)), , drop = FALSE]   # lowest (best) first, ties by gene name
+      
+      tab$lineage <- lin
+      write.table(cbind(gene = rownames(tab), tab),
+                  file = file.path(dirs[[tname]], paste0(gsub(" ", "_", lin), t$file)),
+                  sep = "\t", row.names = FALSE, quote = FALSE)
+    }
+  }
+}
+
+single_score <- function(x) rank(-x, ties.method = "min")^2
