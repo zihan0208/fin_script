@@ -2021,26 +2021,6 @@ filter_predictA <- function(df, min_all = 0.007, min_all_mode = c("all", "any"),
   df[keep, , drop = FALSE]
 }
 
-format_quasipoisson_cols <- function(df) {
-  # We use any_of() and matches() to ensure the function is robust 
-  # even if some columns aren't present in every dataset.
-  df_formatted <- df %>%
-    select(
-      matches("^waldStat|^log2FC"),
-      starts_with("predictA"),
-      starts_with("predictB"),
-      starts_with("pvalue"),
-      starts_with("endpeak_ratio"),
-      starts_with("peakmax"),
-      -any_of("pvalue_meta"),           # Temporarily remove to re-position at the end
-      matches("^average_FC|^median_FC"),
-      any_of("I"),
-      any_of("pvalue_meta")             # Add it back at the very end
-    )
-  
-  return(df_formatted)
-}
-
 filter_peak_ratio <- function(df, min_peak = 0.05, min_ratio = 0.9, paired = FALSE,
                               peak_prefix = "peakmax_", ratio_prefix = "endpeak_ratio_") {
   pk_cols <- grep(paste0("^", peak_prefix),  colnames(df), value = TRUE)
@@ -2129,11 +2109,6 @@ mask_fc_by_ratio <- function(df, min_ratio = 1, ratio_prefix = "endpeak_ratio_")
   fc <- as.matrix(df[, fc_cols, drop = FALSE]); r <- as.matrix(df[, rc_cols, drop = FALSE])
   fc[!(r >= min_ratio) | is.na(r)] <- NA
   fc
-}
-
-rows_exact <- function(tab, genes) {
-  idx <- match(genes, rownames(tab))
-  tab[idx[!is.na(idx)], , drop = FALSE]                          # only genes that really exist in tab, exact names
 }
 
 format_lineage_specific_genes_bp <- function(lineage, cds, nknot = 8, p_cutoff = 0.05, FC_pattern_cutoff = 0.2, fc_p = 0.4, fc_p_fold = 0.4, fc_d_fold = 0.4, fc_d = 0.2, peakend_cutoff = 1, 
