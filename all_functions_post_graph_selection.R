@@ -1492,11 +1492,11 @@ reorder_metrics_grouped <- function(df, type) {
   return(df)
 }
 
-quasi_test_bp <- function(cds){
+quasi_test_bp <- function(cds, n_knots = NULL){
   lineages <- names(cds@lineages)
   
   # Both 'res' and 'waldResOmnibus' are now lists with names 'pattern' and 'diffend'
-  res <- run_all_pairwise_bp(cds, lineages)
+  res <- run_all_pairwise_bp(cds, lineages, n_knots = n_knots)
   
   for (lin in lineages) {
     # 1. Extract pairwise dataframes for this lineage
