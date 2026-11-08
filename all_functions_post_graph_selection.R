@@ -2330,14 +2330,20 @@ format_lineage_specific_genes_bp <- function(lineage, cds, nknot = 8, p_cutoff =
   lineage_genes_d_below <- rows_exact(lineage_genes_d_part, rownames(d_tab_below_filter_kept))
   lineage_genes_d_below <- complete_rows(lineage_genes_d_below)
   lineage_genes_d_both <- rbind(lineage_genes_d_above, lineage_genes_d_below)
+  
   g_both <- rownames(lineage_genes_d_both)
   lineage_genes_d_both$median_FC_diffend <- pick(lineage_genes_d, g_both, "median_FC_diffend")
   lineage_genes_d <- lineage_genes_d_both
   
+  g_both <- rownames(lineage_genes_d_part_new)
+  lineage_genes_d_part_new$median_FC_diffend <- pick(diffend_genes_adjusted, g_both, "median_FC_diffend")
+  lineage_genes_d_part <- lineage_genes_d_part_new
+  
   #output and formatting
   lineage_genes_p <- format_quasipoisson_cols(lineage_genes_p)
-  lineage_genes_d_part <- format_quasipoisson_cols(lineage_genes_d_part_new)
+  lineage_genes_d_part <- format_quasipoisson_cols(lineage_genes_d_part)
   lineage_genes_d <- format_quasipoisson_cols(lineage_genes_d)
+  
   # 1. Merge the three datasets
   tabs <- list(p = lineage_genes_p, d = lineage_genes_d, d_part = lineage_genes_d_part)
   gene <- Reduce(union, lapply(tabs, rownames))
@@ -2370,6 +2376,17 @@ format_lineage_specific_genes_bp <- function(lineage, cds, nknot = 8, p_cutoff =
     rank(-merged$median_FC_diffend, ties.method = "min")^2 +
     rank(-merged$median_FC_diffend_part, ties.method = "min")^2
   lineage_spec_genes <- merged[order(merged$transientScore), , drop = FALSE]
+  
+  # which test(s) selected each gene
+  in_p  <- rownames(lineage_spec_genes) %in% rownames(lineage_genes_p)
+  in_d  <- rownames(lineage_spec_genes) %in% rownames(lineage_genes_d)
+  in_dp <- rownames(lineage_spec_genes) %in% rownames(lineage_genes_d_part)
+  
+  sel_mat <- cbind(pattern = in_p, diffend = in_d, diffend_part = in_dp)
+  lineage_spec_genes$selected_by <- ifelse(
+    rowSums(sel_mat) == 3, "all",
+    apply(sel_mat, 1, function(r) paste(colnames(sel_mat)[r], collapse = "+")))
+  
   lineage_spec_genes$lineage <- rep(lineage, nrow(lineage_spec_genes))
   
   lineage_spec <- list("pattern_filtered" = lineage_genes_p, "pattern_prefiltered" = pattern_genes_adjusted,
