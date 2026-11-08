@@ -2856,8 +2856,8 @@ format_branch_specific_genes_bp <- function(branch_point, cds, branch_number = 1
   final_out_dpart <- final_out_dpart[order(final_out_dpart$transientScore, rownames(final_out_dpart)), , drop = FALSE]
   
   list("pattern_test_only" = final_out,
-       "pattern_and_diffend_test_combined" = final_out_double,
-       "diffend_test_only" = final_out_dpart)
+       "pattern_and_diffend_part_test_combined" = final_out_double,
+       "diffend_part_test_only" = final_out_dpart)
 }
 
 write_lineage_tests <- function(cds, lineages, tests, dirs) {
